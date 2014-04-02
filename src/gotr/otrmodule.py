@@ -137,20 +137,20 @@ try:
             gajim.connections[account].connection.send(stanza, now=True)
 
         def setState(self, newstate):
-            if self.state == potr.context.STATE_ENCRYPTED:
+            if self.state == potr.context.OTRState.ENCRYPTED:
                 # we were encrypted
-                if newstate == potr.context.STATE_ENCRYPTED:
+                if newstate == potr.context.OTRState.ENCRYPTED:
                     # and are still -> it's just a refresh
                     OtrPlugin.gajim_log(
                             _('Private conversation with %s refreshed.') % self.peer,
                             self.user.accountname, self.peer)
-                elif newstate == potr.context.STATE_FINISHED:
+                elif newstate == potr.context.OTRState.FINISHED:
                     # and aren't anymore -> other side disconnected
                     OtrPlugin.gajim_log(_('%s has ended his/her private '
                             'conversation with you. You should do the same.')
                             % self.peer, self.user.accountname, self.peer)
             else:
-                if newstate == potr.context.STATE_ENCRYPTED:
+                if newstate == potr.context.OTRState.ENCRYPTED:
                     # we are now encrypted
                     trust = self.getCurrentTrust()
                     if trust is None:
@@ -165,8 +165,8 @@ try:
                         % {'trustStr': trustStr, 'peer': self.peer},
                         self.user.accountname, self.peer)
 
-            if self.state != potr.context.STATE_PLAINTEXT and \
-                    newstate == potr.context.STATE_PLAINTEXT:
+            if self.state != potr.context.OTRState.PLAINTEXT and \
+                    newstate == potr.context.OTRState.PLAINTEXT:
                 # we are now plaintext
                 OtrPlugin.gajim_log(
                         _('Private conversation with %s lost.') % self.peer,
@@ -304,8 +304,8 @@ class OtrPlugin(GajimPlugin):
     def get_otr_status(self, account, contact):
         ctx = self.us[account].getContext(contact.get_full_jid())
 
-        finished = ctx.state == potr.context.STATE_FINISHED
-        encrypted = finished or ctx.state == potr.context.STATE_ENCRYPTED
+        finished = ctx.state == potr.context.OTRState.FINISHED
+        encrypted = finished or ctx.state == potr.context.OTRState.ENCRYPTED
         trusted = encrypted and bool(ctx.getCurrentTrust())
         return (encrypted, trusted, finished)
 
@@ -438,10 +438,10 @@ class OtrPlugin(GajimPlugin):
                 human_hash = potr.human_hash(fpr)
                 trust = bool(us.getTrust(ctx.trustName, fpr))
 
-                if ctx.state == potr.context.STATE_ENCRYPTED:
+                if ctx.state == potr.context.OTRState.ENCRYPTED:
                     state = "encrypted"
                     tip = enc_tip
-                elif ctx.state == potr.context.STATE_FINISHED:
+                elif ctx.state == potr.context.OTRState.FINISHED:
                     state = "finished"
                     tip = ended_tip
                 else:
@@ -536,7 +536,7 @@ class OtrPlugin(GajimPlugin):
         if event.show == 'offline':
             for us in self.us.itervalues():
                 for fjid, ctx in us.ctxs.iteritems():
-                    if ctx.state == potr.context.STATE_ENCRYPTED:
+                    if ctx.state == potr.context.OTRState.ENCRYPTED:
                         self.us[account].getContext(fjid).disconnect()
 
         return PASS
@@ -630,17 +630,14 @@ class OtrPlugin(GajimPlugin):
 
             try:
                 newmsg = self.us[event.account].getContext(fjid).sendMessage(
-                        potr.context.FRAGMENT_SEND_ALL_BUT_LAST, message,
+                        potr.context.FragmentSendPolicy.ALL_BUT_LAST, message,
                         appdata={'session':event.session})
                 potrrootlog.debug('processed message={0!r}'.format(newmsg))
-            except potr.context.NotEncryptedError, e:
-                if e.args[0] == potr.context.EXC_FINISHED:
-                    self.gajim_log(_('Your message was not send. Either end '
-                        'your private conversation, or restart it'), event.account,
-                        fjid)
-                    return IGNORE
-                else:
-                    raise e
+            except potr.context.EncryptionFinishedError, e:
+                self.gajim_log(_('Your message was not send. Either end '
+                    'your private conversation, or restart it'), event.account,
+                    fjid)
+                return IGNORE
 
             if event.xhtml: # if we had html before, replace with new content
                 event.xhtml = newmsg
